@@ -17,8 +17,7 @@ from sqlalchemy import create_engine, func, inspect , desc
 #################################################
 
 #create the engine
-engine = create_engine("sqlite:///J:/UNC Bootcamp/sqlalchemy-challenge/Climate_Analysis/Resources/hawaii.sqlite")
-
+engine = create_engine("sqlite:///Resources/hawaii.sqlite")
 
 # reflect an existing database into a new model
 Base = automap_base()
@@ -86,7 +85,7 @@ def precipitation():
 
     dict = {
         "Text 1": "Results for Precipitation from 2016-08-23 to 2017-08-23",
-        "Unordered Results": precipitation
+        "Results": precipitation
     }
     local_session.close()
     return jsonify(dict)
@@ -107,10 +106,13 @@ def tobs():
     # Query to get the most active station
     most_active = session.query(measurement.station, func.count(measurement.station)).group_by(measurement.station).order_by(func.count(measurement.station).desc()).first()
     # Query to get the last 12 months of temperature observation data (tobs).
-    results = session.query(measurement.date, measurement.tobs, measurement.station).filter(measurement.date >= dt.date(2016, 8, 23)).filter(measurement.station == most_active[0]).all()
+    results = session.query(measurement.date, measurement.tobs, measurement.station).filter(measurement.date >= dt.date(2016, 8, 18)).filter(measurement.station == most_active[0]).all()
+    #store the results in a dictionary
+    response_data = {date: tobs for date, tobs, station in results}
+    
     # Jsonify the results
     local_session.close()
-    return jsonify(results)
+    return jsonify(response_data)
 
 
 
@@ -128,17 +130,20 @@ def start():
     
 
     # Query to get the min, avg, and max temperatures for a given start date.
-    results = local_session.query(measurement.date, func.min(measurement.tobs), func.max(measurement.tobs), func.avg(measurement.tobs)).filter(measurement.date >= start).all()
+    results = local_session.query(measurement.date, func.min(measurement.tobs), func.max(measurement.tobs), func.avg(measurement.tobs)).filter(measurement.date >= start).group_by(measurement.date).all()
     #store the results in a dictionary
-    dict = {
-        "date": for date in results,
-        "min_temp": for min_temp in results,
-        "max_temp": for max_temp in results,
-        "avg_temp": for avg_temp in results
-    }
+    response_data = [
+        {
+            result[0]: {
+            "min_temp": result[1],
+            "max_temp": result[2],
+            "avg_temp": result[3]
+            } for result in results
+        }
+    ]
     # Jsonify the results
     local_session.close()
-    return jsonify(dict)
+    return jsonify(response_data)
 
 @app.route("/api/v1.0/temp/start/end", methods=['POST'])
 def start_end():
@@ -154,10 +159,22 @@ def start_end():
         return f"Error: Date not in range. Please enter a date between {first_date} and {last_date}", 400
     
     # Query to get the min, avg, and max temperatures for a given start-end range.
-    results = local_session.query(func.min(measurement.tobs), func.max(measurement.tobs), func.avg(measurement.tobs)).filter(measurement.date >= start).filter(measurement.date <= end).all()
+    results = local_session.query(measurement.date, func.min(measurement.tobs), func.max(measurement.tobs), func.avg(measurement.tobs)).filter(measurement.date >= start).filter(measurement.date <= end).group_by(measurement.date).all()
+    #store the results in a dictionary
+    response_data = [
+        {
+            result[0]: {
+            "min_temp": result[1],
+            "max_temp": result[2],
+            "avg_temp": result[3]
+            } for result in results
+        }
+    ]
+
     # Jsonify the results
     local_session.close()
-    return jsonify(results)
-
+    return jsonify(response_data)
+#SQL Alchemy had trouble with multi threading and needed to be set to false to keep results simplified.
+#The data set is small enough that single threaded performance is fine.
 if __name__ == "__main__":
-    app.run(debug=True, threaded=False)
+    app.run(debug=False, threaded=False)

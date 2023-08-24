@@ -47,6 +47,7 @@ first_date = session.query(measurement.date).order_by(measurement.date).first()
 last_date = session.query(measurement.date).order_by(measurement.date.desc()).first()
 first_date = dt.datetime.strptime(first_date[0], '%Y-%m-%d')
 last_date = dt.datetime.strptime(last_date[0], '%Y-%m-%d')
+session.close()
 
 @app.route("/")
 def home():
@@ -72,49 +73,50 @@ def home():
 
 @app.route("/api/v1.0/precipitation")
 def precipitation():
+    local_session = Session(engine) 
     # Starting from the most recent data point in the database. 
-    session.query(measurement.date).order_by(measurement.date.desc()).first()
+    local_session.query(measurement.date).order_by(measurement.date.desc()).first()
 
     # Perform a query to retrieve the data and precipitation scores
-    results = session.query(measurement.date, measurement.prcp).filter(measurement.date >= dt.date(2016, 8, 23)).all()
+    results = local_session.query(measurement.date, measurement.prcp).filter(measurement.date >= dt.date(2016, 8, 23)).all()
 
     # Jsonify the results with date as the key and prcp as the value.
     precipitation = {date: prcp for date, prcp in results}
         # Save the query results as a Pandas DataFrame. Explicitly set the column names
-    df = pd.DataFrame(results, columns=['date', 'precipitation'])
 
-
-    # Sort the dataframe by date
-    df.set_index(df['date'], inplace=True)
-    df = df.sort_index()
     dict = {
         "Text 1": "Results for Precipitation from 2016-08-23 to 2017-08-23",
-        "Unordered Results": precipitation,
-        "Text 2": "Results ordered by date",
-        "Ordered Results": df.to_dict()
+        "Unordered Results": precipitation
     }
+    local_session.close()
     return jsonify(dict)
 
 @app.route("/api/v1.0/stations")
 def stations():
+    local_session = Session(engine)
     # Query to get the stations list
-    stations = session.query(Station.station, Station.name).all()
+    stations = local_session.query(Station.station, Station.name).all()
     # Jsonify the results
-    return jsonify(stations)
+    station_data = {station: name for station, name in stations}
+    local_session.close()
+    return jsonify(station_data)
 
 @app.route("/api/v1.0/tobs")
 def tobs():
+    local_session = Session(engine)
     # Query to get the most active station
     most_active = session.query(measurement.station, func.count(measurement.station)).group_by(measurement.station).order_by(func.count(measurement.station).desc()).first()
     # Query to get the last 12 months of temperature observation data (tobs).
     results = session.query(measurement.date, measurement.tobs, measurement.station).filter(measurement.date >= dt.date(2016, 8, 23)).filter(measurement.station == most_active[0]).all()
     # Jsonify the results
+    local_session.close()
     return jsonify(results)
 
 
 
 @app.route("/api/v1.0/temp/start", methods=['POST'])
 def start():
+    local_session = Session(engine)
     start = dt.datetime.strptime(request.form['start_date'], '%Y-%m-%d')
     
     #enforce the date is within the range
@@ -126,12 +128,21 @@ def start():
     
 
     # Query to get the min, avg, and max temperatures for a given start date.
-    results = session.query(func.min(measurement.tobs), func.max(measurement.tobs), func.avg(measurement.tobs)).filter(measurement.date >= start).all()
+    results = local_session.query(measurement.date, func.min(measurement.tobs), func.max(measurement.tobs), func.avg(measurement.tobs)).filter(measurement.date >= start).all()
+    #store the results in a dictionary
+    dict = {
+        "date": for date in results,
+        "min_temp": for min_temp in results,
+        "max_temp": for max_temp in results,
+        "avg_temp": for avg_temp in results
+    }
     # Jsonify the results
-    return jsonify(results)
+    local_session.close()
+    return jsonify(dict)
 
 @app.route("/api/v1.0/temp/start/end", methods=['POST'])
 def start_end():
+    local_session = Session(engine)
     start = dt.datetime.strptime(request.form['start_date'], '%Y-%m-%d')
     end = dt.datetime.strptime(request.form['end_date'], '%Y-%m-%d')
     
@@ -143,9 +154,10 @@ def start_end():
         return f"Error: Date not in range. Please enter a date between {first_date} and {last_date}", 400
     
     # Query to get the min, avg, and max temperatures for a given start-end range.
-    results = session.query(func.min(measurement.tobs), func.max(measurement.tobs), func.avg(measurement.tobs)).filter(measurement.date >= start).filter(measurement.date <= end).all()
+    results = local_session.query(func.min(measurement.tobs), func.max(measurement.tobs), func.avg(measurement.tobs)).filter(measurement.date >= start).filter(measurement.date <= end).all()
     # Jsonify the results
+    local_session.close()
     return jsonify(results)
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(debug=True, threaded=False)
